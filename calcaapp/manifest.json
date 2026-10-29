@@ -1,0 +1,14 @@
+{
+  "name": "Calca Casera",
+  "short_name": "Calca",
+  "description": "Calca cualquier imagen sobre papel usando la cámara del móvil.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "fullscreen",
+  "orientation": "any",
+  "background_color": "#1e1b18",
+  "theme_color": "#1e1b18",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
