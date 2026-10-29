@@ -102,20 +102,30 @@ function fitImage() {
 
 // ---------- Cámara ----------
 async function startCamera() {
-  if (state.stream) return;
+  // Evita abrir dos cámaras a la vez si se pulsa varias veces mientras se pide permiso
+  if (state.stream || state.starting) return;
+  state.starting = true;
   try {
-    state.stream = await navigator.mediaDevices.getUserMedia({
+    const stream = await navigator.mediaDevices.getUserMedia({
       video: { facingMode:{ ideal:'environment' }, width:{ ideal:1920 }, height:{ ideal:1080 } }, audio:false });
-    video.srcObject = state.stream;
-    const track = state.stream.getVideoTracks()[0];
+    // Si mientras tanto se cambió a calco directo, no dejar la cámara encendida
+    if (state.mode !== 'camera') { stream.getTracks().forEach(t => t.stop()); return; }
+    state.stream = stream;
+    video.srcObject = stream;
+    const track = stream.getVideoTracks()[0];
     const caps = track.getCapabilities ? track.getCapabilities() : {};
     $('torchBtn').classList.toggle('hidden', !caps.torch);
   } catch (e) {
-    toast('Sin cámara: usando modo calco directo');
-    setMode('lightbox');
+    if (state.mode === 'camera') {
+      toast('Sin cámara: usando modo calco directo');
+      setMode('lightbox');
+    }
+  } finally {
+    state.starting = false;
   }
 }
 function stopCamera() {
+  state.torch = false; $('torchBtn').classList.remove('on');
   if (!state.stream) return;
   state.stream.getTracks().forEach(t => t.stop());
   state.stream = null; video.srcObject = null;
@@ -154,7 +164,10 @@ $('file').onchange = e => {
   const f = e.target.files[0]; if (!f) return;
   const url = URL.createObjectURL(f);
   const img = new Image();
+  img.onerror = () => { URL.revokeObjectURL(url); toast('No se pudo abrir esa imagen'); };
   img.onload = () => {
+    // Liberar la memoria de la imagen anterior
+    if (state.original) URL.revokeObjectURL(state.original.src);
     state.original = img; state.sketch = false;
     $('sketchBtn').classList.remove('on'); $('thresholdRow').classList.add('hidden');
     overlay.onload = fitImage; overlay.src = url;
@@ -175,7 +188,16 @@ function renderSketch() {
   const w = Math.round(img.width * k), h = Math.round(img.height * k);
   const c = document.createElement('canvas'); c.width = w; c.height = h;
   const ctx = c.getContext('2d'); ctx.drawImage(img, 0, 0, w, h);
-  const src = ctx.getImageData(0, 0, w, h), d = src.data;
+  let src;
+  try { src = ctx.getImageData(0, 0, w, h); }
+  catch {
+    // Algunos navegadores bloquean leer los píxeles de ciertas imágenes (p. ej. SVG)
+    toast('Esta imagen no se puede convertir a líneas');
+    state.sketch = false;
+    $('sketchBtn').classList.remove('on'); $('thresholdRow').classList.add('hidden');
+    return;
+  }
+  const d = src.data;
   const g = new Float32Array(w * h);
   for (let i = 0; i < w * h; i++) g[i] = .299*d[i*4] + .587*d[i*4+1] + .114*d[i*4+2];
   const out = ctx.createImageData(w, h), o = out.data, th = +$('threshold').value;
@@ -205,7 +227,7 @@ $('sketchBtn').onclick = () => {
   }
 };
 let thTimer;
-$('threshold').oninput = () => { clearTimeout(thTimer); thTimer = setTimeout(renderSketch, 120); };
+$('threshold').oninput = () => { clearTimeout(thTimer); thTimer = setTimeout(() => { if (state.sketch) renderSketch(); }, 120); };
 
 // ---------- Controles ----------
 $('opacity').oninput = apply;
