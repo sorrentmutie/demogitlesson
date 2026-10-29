@@ -7,7 +7,7 @@
   <title>Calca Casera</title>
   <link rel="manifest" href="manifest.json">
   <link rel="icon" href="icon.svg" type="image/svg+xml">
-  <link rel="apple-touch-icon" href="icon.svg">
+  <link rel="apple-touch-icon" href="icon-192.png">
   <style>
     :root { --bg:#1e1b18; --panel:rgba(20,18,16,.82); --fg:#f4efe9; --accent:#e08a3c; }
     * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
@@ -300,11 +300,42 @@ $('googleBtn').onclick = () => {
   window.open('https://www.google.com/search?tbm=isch&q=' + encodeURIComponent(q.trim()), '_blank', 'noopener');
 };
 
+// Saca la dirección de la imagen de un texto. Los enlaces de Google Imágenes
+// (google.com/imgres?imgurl=…) llevan dentro la dirección de la imagen original.
+function imageUrlFrom(text) {
+  const m = (text || '').match(/https?:\/\/[^\s"'<>]+/i);
+  if (!m) return null;
+  try {
+    const u = new URL(m[0]);
+    const inner = u.searchParams.get('imgurl') || u.searchParams.get('mediaurl');
+    return inner && /^https?:\/\//i.test(inner) ? inner : u.href;
+  } catch { return null; }
+}
 function loadFromText(text) {
   const t = (text || '').trim();
-  if (/^https?:\/\/\S+$/i.test(t)) { closeSearch(); toast('Cargando…'); loadImage(t); return true; }
-  return false;
+  if (!/^https?:\/\/\S+$/i.test(t)) return false;
+  closeSearch(); toast('Cargando…'); loadImage(imageUrlFrom(t)); return true;
 }
+
+// ---------- Recibir desde el menú «Compartir» del móvil ----------
+// El service worker guarda lo compartido y abre la app con ?shared=1
+async function receiveShare() {
+  if (!new URLSearchParams(location.search).has('shared') || !('caches' in window)) return;
+  history.replaceState(null, '', location.pathname);
+  try {
+    const cache = await caches.open('calca-share');
+    const file = await cache.match('shared-file');
+    const text = await cache.match('shared-text');
+    await caches.delete('calca-share');
+    if (file) return loadImage(URL.createObjectURL(await file.blob()));
+    const url = text && imageUrlFrom(await text.text());
+    if (url) { toast('Cargando…'); return loadImage(url); }
+    toast('No llegó ninguna imagen');
+  } catch {
+    toast('No se pudo recibir la imagen');
+  }
+}
+receiveShare();
 $('pasteBtn').onclick = async () => {
   try {
     if (navigator.clipboard && navigator.clipboard.read) {

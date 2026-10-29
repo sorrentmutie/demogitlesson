@@ -15,6 +15,7 @@ ves el papel a través de la cámara con la imagen elegida superpuesta y semitra
 - **Google Imágenes**: abre la búsqueda en Google; mantén pulsada la imagen → «Copiar imagen» (o «Copiar dirección de la imagen») y vuelve a la app para pulsar **📋 Pegar**. También puedes pegar el enlace directamente en el cuadro de búsqueda.
 - 🎥 **Modo cámara**: imagen superpuesta a la cámara trasera.
 - 💡 **Modo calco directo**: sin cámara, la imagen a pantalla completa sobre fondo blanco para poner un papel fino encima de la pantalla.
+- 📤 **Compartir a la app** (Android, con la app instalada): en Google, la galería o cualquier web, pulsa **Compartir** en una imagen y elige **Calca Casera**; se abre directamente lista para calcar. También acepta enlaces de Google Imágenes.
 - ✏️ **Líneas**: convierte la foto en contornos (detección de bordes) con control de detalle.
 - ↔️ Espejo, ⟲ recolocar, 🔦 linterna (si el móvil lo permite).
 - La pantalla no se apaga mientras calcas y funciona sin conexión una vez instalada.
