@@ -55,7 +55,8 @@
     .result { padding:0; aspect-ratio:1; overflow:hidden; background:#fff; border-radius:10px; }
     .result img { width:100%; height:100%; object-fit:contain; }
     #status { opacity:.7; font-size:14px; line-height:1.4; text-align:center; }
-    #more { display:block; margin:8px auto; }
+    #more, #googleInline { display:block; margin:12px auto; white-space:normal; text-align:center; }
+    #googleInline { font-size:15px; max-width:340px; }
     #hint .primary { min-width:220px; justify-content:center; }
     #toast { position:fixed; left:50%; top:50%; transform:translate(-50%,-50%); background:var(--panel);
       padding:10px 16px; border-radius:12px; z-index:4; transition:opacity .3s; pointer-events:none; }
@@ -107,6 +108,7 @@
       <div id="results"></div>
       <p id="status">Imágenes de uso libre de Wikimedia Commons y Openverse. Para usar una de Google: mantenla pulsada → «Copiar imagen» y vuelve aquí a pulsar 📋 Pegar.</p>
       <button id="more" class="hidden">Cargar más</button>
+      <button id="googleInline" class="hidden primary">¿No es lo que buscas? Búscalo en Google Imágenes ↗</button>
     </div>
   </div>
 
@@ -308,9 +310,30 @@ function addResult(r) {
   $('results').append(b);
 }
 
+// Los bancos de imágenes libres exigen que coincidan todas las palabras, así que se quitan
+// las que no describen la imagen («para colorear», «dibujo de»…). Si las había, se buscan dibujos.
+const FILLER = /\b(para\s+(colorear|pintar|calcar|dibujar|imprimir)|colorear|calcar|dibujos?|imagen(es)?|im[aá]genes|f[aá]ciles?|bonitos?|de|del|la|el|los|las|un|una|y|con)\b/gi;
+const DRAWING_WORDS = /\b(colorear|pintar|calcar|dibujos?|dibujar|silueta|contorno|coloring|drawing|line\s*art|outline)\b/i;
+function cleanQuery(q) {
+  const clean = q.replace(FILLER, ' ').replace(/\s+/g, ' ').trim();
+  return { text: clean || q, drawing: DRAWING_WORDS.test(q) };
+}
+
+function googleQuery() {
+  const q = $('q').value.trim();
+  // Si ya pide un dibujo («para colorear»…), no añadir más palabras
+  return DRAWING_WORDS.test(q) || !$('drawingsOnly').checked ? q : q + ' dibujo para calcar';
+}
+function openGoogle() {
+  window.open('https://www.google.com/search?tbm=isch&q=' + encodeURIComponent(googleQuery()), '_blank', 'noopener');
+  toast('Mantén pulsada la imagen → Compartir → Calca Casera');
+}
+$('googleInline').onclick = openGoogle;
+
 async function runSearch(more) {
   if (!more) {
     if (search.ctrl) search.ctrl.abort();
+    $('googleInline').classList.add('hidden');
     search.q = $('q').value.trim();
     $('results').replaceChildren();
     search.sources = Object.keys(SOURCES).map(name => ({ name, st:SOURCES[name].first(), more:true }));
@@ -319,13 +342,14 @@ async function runSearch(more) {
   const id = ++search.id, ctrl = new AbortController();
   search.ctrl = ctrl;
   const timer = setTimeout(() => ctrl.abort(), TIMEOUT);
-  $('status').textContent = 'Buscando…'; $('more').classList.add('hidden');
-  const drawings = $('drawingsOnly').checked;
+  $('status').textContent = 'Buscando…'; $('more').classList.add('hidden'); $('googleInline').classList.add('hidden');
+  const query = cleanQuery(search.q);
+  const drawings = $('drawingsOnly').checked || query.drawing;
   let found = 0, failed = 0, busy = 0;
   const active = search.sources.filter(s => s.more);
   await Promise.all(active.map(async s => {
     try {
-      const res = await SOURCES[s.name].fetch(search.q, drawings, s.st, ctrl.signal);
+      const res = await SOURCES[s.name].fetch(query.text, drawings, s.st, ctrl.signal);
       if (id !== search.id) return;
       s.more = res.more;
       res.items.forEach(addResult);
@@ -340,12 +364,12 @@ async function runSearch(more) {
   if (id !== search.id) return;  // Ya hay otra búsqueda en marcha
   const total = $('results').children.length;
   $('more').classList.toggle('hidden', !search.sources.some(s => s.more));
+  $('googleInline').classList.remove('hidden');
   if (total) $('status').textContent = '';
   else if (busy) $('status').textContent = 'Demasiadas búsquedas seguidas, espera un minuto.';
-  else if (failed === active.length) $('status').textContent = 'Los buscadores no responden. Revisa la conexión o prueba con Google Imágenes.';
-  else $('status').textContent = drawings
-    ? 'Sin resultados. Prueba quitando «Solo dibujos» o con otras palabras (en inglés suele haber más).'
-    : 'Sin resultados. Prueba con otras palabras (en inglés suele haber más).';
+  else if (failed === active.length) $('status').textContent = 'Los buscadores no responden. Revisa la conexión o búscalo en Google.';
+  else $('status').textContent = 'No hay imágenes de uso libre de esto. Los personajes de dibujos animados ' +
+    '(Snoopy, Disney…) casi nunca lo son: búscalos en Google con el botón de abajo.';
 }
 $('searchForm').onsubmit = e => { e.preventDefault(); $('q').blur(); runSearch(false); };
 $('drawingsOnly').onchange = () => runSearch(false);
@@ -353,10 +377,7 @@ $('more').onclick = () => runSearch(true);
 
 // Google Imágenes no permite buscar desde otra app, así que se abre en una pestaña:
 // allí se mantiene pulsada la imagen → «Copiar imagen» o «Copiar dirección de la imagen» y se pega aquí.
-$('googleBtn').onclick = () => {
-  const q = $('q').value.trim() + ($('drawingsOnly').checked ? ' dibujo para calcar' : '');
-  window.open('https://www.google.com/search?tbm=isch&q=' + encodeURIComponent(q.trim()), '_blank', 'noopener');
-};
+$('googleBtn').onclick = openGoogle;
 
 // Saca la dirección de la imagen de un texto. Los enlaces de Google Imágenes
 // (google.com/imgres?imgurl=…) llevan dentro la dirección de la imagen original.
