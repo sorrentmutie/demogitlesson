@@ -11,7 +11,7 @@ ves el papel a través de la cámara con la imagen elegida superpuesta y semitra
 5. Pulsa el **candado 🔒** para que no se mueva al tocar la pantalla sin querer, y ¡a dibujar!
 
 ## Funciones
-- 🔎 **Buscar en internet**: buscador integrado con imágenes de uso libre de [Openverse](https://openverse.org) (con la opción «Solo dibujos»). En inglés suele haber más resultados.
+- 🔎 **Buscar en internet**: buscador integrado con imágenes de uso libre de [Wikimedia Commons](https://commons.wikimedia.org) y [Openverse](https://openverse.org) (con la opción «Solo dibujos»). En inglés suele haber más resultados.
 - **Google Imágenes**: abre la búsqueda en Google; mantén pulsada la imagen → «Copiar imagen» (o «Copiar dirección de la imagen») y vuelve a la app para pulsar **📋 Pegar**. También puedes pegar el enlace directamente en el cuadro de búsqueda.
 - 🎥 **Modo cámara**: imagen superpuesta a la cámara trasera.
 - 💡 **Modo calco directo**: sin cámara, la imagen a pantalla completa sobre fondo blanco para poner un papel fino encima de la pantalla.

@@ -105,7 +105,7 @@
     </div>
     <div id="resultsWrap">
       <div id="results"></div>
-      <p id="status">Resultados de Openverse (imágenes de uso libre). Para usar una de Google: mantenla pulsada → «Copiar imagen» y vuelve aquí a pulsar 📋 Pegar.</p>
+      <p id="status">Imágenes de uso libre de Wikimedia Commons y Openverse. Para usar una de Google: mantenla pulsada → «Copiar imagen» y vuelve aquí a pulsar 📋 Pegar.</p>
       <button id="more" class="hidden">Cargar más</button>
     </div>
   </div>
@@ -235,8 +235,10 @@ $('file').onchange = e => {
 };
 
 // ---------- Buscar en internet ----------
-// Openverse: millones de imágenes con licencia libre, sin necesidad de clave de API.
-const search = { q:'', page:1, busy:false };
+// Se busca a la vez en dos sitios de imágenes de uso libre que no necesitan clave de API:
+// Wikimedia Commons y Openverse. Si uno falla o tarda demasiado, se muestran los del otro.
+const TIMEOUT = 12000;
+const search = { q:'', id:0, ctrl:null, sources:[] };
 function openSearch() {
   $('search').classList.remove('hidden');
   setTimeout(() => $('q').focus(), 50);
@@ -245,49 +247,105 @@ function closeSearch() { $('search').classList.add('hidden'); }
 $('searchBtn').onclick = $('hintSearch').onclick = openSearch;
 $('closeSearch').onclick = closeSearch;
 
+async function getJSON(url, signal) {
+  const res = await fetch(url, { signal });
+  if (res.status === 429) throw new Error('busy');
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  return res.json();
+}
+// El autor en Commons viene como HTML: quedarse solo con el texto
+function plain(html) {
+  const doc = new DOMParser().parseFromString(html || '', 'text/html');
+  doc.querySelectorAll('script,style').forEach(el => el.remove());
+  return doc.body.textContent.trim();
+}
+
+const SOURCES = {
+  commons: {
+    first: () => ({ offset:0 }),
+    async fetch(q, drawings, st, signal) {
+      const p = new URLSearchParams({ action:'query', format:'json', origin:'*', generator:'search',
+        gsrnamespace:6, gsrlimit:20, gsroffset:st.offset,
+        gsrsearch: q + (drawings ? ' filetype:drawing' : ' filetype:bitmap|drawing'),
+        prop:'imageinfo', iiprop:'url|extmetadata', iiurlwidth:1280, iiextmetadatafilter:'Artist|LicenseShortName' });
+      const data = await getJSON('https://commons.wikimedia.org/w/api.php?' + p, signal);
+      const pages = Object.values((data.query && data.query.pages) || {}).sort((a, b) => a.index - b.index);
+      st.offset = data.continue ? data.continue.gsroffset : null;
+      return { more: st.offset != null, items: pages.filter(pg => pg.imageinfo).map(pg => {
+        const ii = pg.imageinfo[0], m = ii.extmetadata || {}, big = ii.thumburl || ii.url;
+        return { thumb: big.replace(/\/1280px-/, '/330px-'), url: big, title: pg.title,
+          credit: [plain(m.Artist && m.Artist.value), m.LicenseShortName && m.LicenseShortName.value].filter(Boolean).join(' · ') };
+      }) };
+    },
+  },
+  openverse: {
+    first: () => ({ page:1 }),
+    async fetch(q, drawings, st, signal) {
+      const p = new URLSearchParams({ q, page:st.page, page_size:20, mature:'false' });
+      if (drawings) p.set('category', 'illustration,digitized_artwork');
+      const data = await getJSON('https://api.openverse.org/v1/images/?' + p, signal);
+      st.page++;
+      return { more: st.page <= (data.page_count || 1), items: (data.results || []).map(r => ({
+        thumb: r.thumbnail || r.url, url: r.url, title: r.title,
+        credit: [r.creator, r.license && ('CC ' + r.license.toUpperCase() + ' ' + (r.license_version || '')).trim()].filter(Boolean).join(' · ') })) };
+    },
+  },
+};
+
+function addResult(r) {
+  const b = document.createElement('button');
+  b.className = 'result';
+  const im = document.createElement('img');
+  im.loading = 'lazy'; im.src = r.thumb; im.alt = r.title || '';
+  im.onerror = () => b.remove();
+  b.append(im);
+  b.onclick = () => {
+    closeSearch();
+    toast('Cargando…');
+    loadImage(r.url);
+    if (r.credit) setTimeout(() => toast(r.credit), 1500);
+  };
+  $('results').append(b);
+}
+
 async function runSearch(more) {
-  if (search.busy) return;
   if (!more) {
-    search.q = $('q').value.trim(); search.page = 1;
+    if (search.ctrl) search.ctrl.abort();
+    search.q = $('q').value.trim();
     $('results').replaceChildren();
-    if (!search.q) return;
+    search.sources = Object.keys(SOURCES).map(name => ({ name, st:SOURCES[name].first(), more:true }));
+    if (!search.q) { $('status').textContent = ''; $('more').classList.add('hidden'); return; }
   }
-  search.busy = true;
+  const id = ++search.id, ctrl = new AbortController();
+  search.ctrl = ctrl;
+  const timer = setTimeout(() => ctrl.abort(), TIMEOUT);
   $('status').textContent = 'Buscando…'; $('more').classList.add('hidden');
-  const params = new URLSearchParams({ q:search.q, page:search.page, page_size:20, mature:'false' });
-  if ($('drawingsOnly').checked) params.set('category', 'illustration,digitized_artwork');
-  try {
-    const res = await fetch('https://api.openverse.org/v1/images/?' + params);
-    if (res.status === 429) throw new Error('Demasiadas búsquedas seguidas, espera un minuto');
-    if (!res.ok) throw new Error('El buscador no responde (' + res.status + ')');
-    const data = await res.json();
-    for (const r of data.results) {
-      const b = document.createElement('button');
-      b.className = 'result';
-      const im = document.createElement('img');
-      im.loading = 'lazy'; im.src = r.thumbnail || r.url; im.alt = r.title || '';
-      b.append(im);
-      b.onclick = () => {
-        closeSearch();
-        toast('Cargando…');
-        loadImage(r.url);
-        // Créditos de la imagen (autor y licencia)
-        const credit = [r.creator, r.license && ('CC ' + r.license.toUpperCase() + ' ' + (r.license_version || ''))]
-          .filter(Boolean).join(' · ');
-        if (credit) setTimeout(() => toast(credit), 1500);
-      };
-      $('results').append(b);
+  const drawings = $('drawingsOnly').checked;
+  let found = 0, failed = 0, busy = 0;
+  const active = search.sources.filter(s => s.more);
+  await Promise.all(active.map(async s => {
+    try {
+      const res = await SOURCES[s.name].fetch(search.q, drawings, s.st, ctrl.signal);
+      if (id !== search.id) return;
+      s.more = res.more;
+      res.items.forEach(addResult);
+      found += res.items.length;
+      if (found) $('status').textContent = 'Buscando más…';
+    } catch (e) {
+      if (e.message === 'busy') busy++; else failed++;
+      s.more = false;
     }
-    const total = data.result_count || 0;
-    $('status').textContent = total ? '' : 'Sin resultados. Prueba con otras palabras (en inglés suele haber más).';
-    $('more').classList.toggle('hidden', search.page >= (data.page_count || 1));
-    search.page++;
-  } catch (e) {
-    $('status').textContent = e.message.startsWith('El buscador') || e.message.startsWith('Demasiadas')
-      ? e.message : 'Sin conexión con el buscador. Prueba con Google o pega un enlace.';
-  } finally {
-    search.busy = false;
-  }
+  }));
+  clearTimeout(timer);
+  if (id !== search.id) return;  // Ya hay otra búsqueda en marcha
+  const total = $('results').children.length;
+  $('more').classList.toggle('hidden', !search.sources.some(s => s.more));
+  if (total) $('status').textContent = '';
+  else if (busy) $('status').textContent = 'Demasiadas búsquedas seguidas, espera un minuto.';
+  else if (failed === active.length) $('status').textContent = 'Los buscadores no responden. Revisa la conexión o prueba con Google Imágenes.';
+  else $('status').textContent = drawings
+    ? 'Sin resultados. Prueba quitando «Solo dibujos» o con otras palabras (en inglés suele haber más).'
+    : 'Sin resultados. Prueba con otras palabras (en inglés suele haber más).';
 }
 $('searchForm').onsubmit = e => { e.preventDefault(); $('q').blur(); runSearch(false); };
 $('drawingsOnly').onchange = () => runSearch(false);
